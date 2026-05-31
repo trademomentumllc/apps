@@ -78,6 +78,23 @@ pub enum JStarInstruction {
     Syscall,
     Halt,
     Nop,
+
+    // Kernel / bare-metal
+    Outb,
+    Inb,
+    Cli,
+    Sti,
+    Lgdt,
+    Lidt,
+    Wrmsr,
+    Rdmsr,
+    Invlpg,
+    WriteCr,
+    ReadCr,
+    Iretq,
+    Ltr,
+    StoreAbs,
+    LoadAbs,
 }
 
 /// What category a token falls into in the JStar language.
@@ -260,6 +277,22 @@ static KEYWORD_TABLE: LazyLock<HashMap<i32, TokenCategory>> = LazyLock::new(|| {
         ("strlen",   TokenCategory::Operation(JStarInstruction::StrLen)),
         ("strcopy",  TokenCategory::Operation(JStarInstruction::StrCopy)),
         ("hash",     TokenCategory::Operation(JStarInstruction::Hash)),
+        // ── Kernel / bare-metal ──
+        ("outb",     TokenCategory::Operation(JStarInstruction::Outb)),
+        ("inb",      TokenCategory::Operation(JStarInstruction::Inb)),
+        ("cli",      TokenCategory::Operation(JStarInstruction::Cli)),
+        ("sti",      TokenCategory::Operation(JStarInstruction::Sti)),
+        ("lgdt",     TokenCategory::Operation(JStarInstruction::Lgdt)),
+        ("lidt",     TokenCategory::Operation(JStarInstruction::Lidt)),
+        ("wrmsr",    TokenCategory::Operation(JStarInstruction::Wrmsr)),
+        ("rdmsr",    TokenCategory::Operation(JStarInstruction::Rdmsr)),
+        ("invlpg",   TokenCategory::Operation(JStarInstruction::Invlpg)),
+        ("writecr",  TokenCategory::Operation(JStarInstruction::WriteCr)),
+        ("readcr",   TokenCategory::Operation(JStarInstruction::ReadCr)),
+        ("iretq",    TokenCategory::Operation(JStarInstruction::Iretq)),
+        ("ltr",      TokenCategory::Operation(JStarInstruction::Ltr)),
+        ("storeabs", TokenCategory::Operation(JStarInstruction::StoreAbs)),
+        ("loadabs",  TokenCategory::Operation(JStarInstruction::LoadAbs)),
         // ── Scope (explicit keyword — not a determiner) ──
         ("global", TokenCategory::Scope(ScopeKind::Global)),
         // ── Data (type primitives and common nouns) ──

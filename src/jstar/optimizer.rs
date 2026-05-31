@@ -104,7 +104,17 @@ fn replace_values_in_inst(inst: &mut IrInst, map: &std::collections::HashMap<VRe
         IrInst::StrCmp { a, b, len, .. } => { replace_value(a, map); replace_value(b, map); replace_value(len, map); }
         IrInst::StrLen { addr, .. } => { replace_value(addr, map); }
         IrInst::StrCopy { dst, src, len } => { replace_value(dst, map); replace_value(src, map); replace_value(len, map); }
-        IrInst::AddressOf { .. } | IrInst::Alloca { .. } | IrInst::PrintStr { .. } | IrInst::ArrayAlloc { .. } | IrInst::FileOpen { .. } | IrInst::ArrayLength { .. } | IrInst::Nop => {}
+        IrInst::Outb { port, value } => { replace_value(port, map); replace_value(value, map); }
+        IrInst::Inb { port, .. } => { replace_value(port, map); }
+        IrInst::Lgdt { addr } | IrInst::Lidt { addr } | IrInst::Invlpg { addr } => { replace_value(addr, map); }
+        IrInst::Wrmsr { msr, value } => { replace_value(msr, map); replace_value(value, map); }
+        IrInst::Rdmsr { msr, .. } => { replace_value(msr, map); }
+        IrInst::WriteCr { cr, value } => { replace_value(cr, map); replace_value(value, map); }
+        IrInst::ReadCr { cr, .. } => { replace_value(cr, map); }
+        IrInst::Ltr { selector } => { replace_value(selector, map); }
+        IrInst::StoreAbs { addr, value, .. } => { replace_value(addr, map); replace_value(value, map); }
+        IrInst::LoadAbs { addr, .. } => { replace_value(addr, map); }
+        IrInst::AddressOf { .. } | IrInst::Alloca { .. } | IrInst::PrintStr { .. } | IrInst::ArrayAlloc { .. } | IrInst::FileOpen { .. } | IrInst::ArrayLength { .. } | IrInst::Nop | IrInst::Cli | IrInst::Sti | IrInst::Iretq => {}
     }
 }
 
@@ -165,7 +175,8 @@ fn dead_code_eliminate(func: &mut IrFunction) {
 fn inst_dest(inst: &IrInst) -> Option<VReg> {
     match inst {
         IrInst::BinOp { dest, .. } | IrInst::UnaryOp { dest, .. } | IrInst::Copy { dest, .. } | IrInst::Load { dest, .. } | IrInst::AddressOf { dest, .. } | IrInst::Call { dest, .. } | IrInst::Syscall { dest, .. } | IrInst::Alloca { dest, .. } | IrInst::Compare { dest, .. } | IrInst::ArrayAlloc { dest, .. } | IrInst::ArrayLoad { dest, .. } | IrInst::LoadIndexed { dest, .. } | IrInst::HashOp { dest, .. } | IrInst::FileOpen { dest, .. } | IrInst::FileRead { dest, .. } | IrInst::ArrayLength { dest, .. } | IrInst::StrCmp { dest, .. } | IrInst::StrLen { dest, .. } => Some(*dest),
-        IrInst::Store { .. } | IrInst::StoreIndexed { .. } | IrInst::Print { .. } | IrInst::PrintStr { .. } | IrInst::ArrayStore { .. } | IrInst::FileClose { .. } | IrInst::StrCopy { .. } | IrInst::Nop => None,
+        IrInst::Inb { dest, .. } | IrInst::Rdmsr { dest, .. } | IrInst::ReadCr { dest, .. } | IrInst::LoadAbs { dest, .. } => Some(*dest),
+        IrInst::Store { .. } | IrInst::StoreIndexed { .. } | IrInst::Print { .. } | IrInst::PrintStr { .. } | IrInst::ArrayStore { .. } | IrInst::FileClose { .. } | IrInst::StrCopy { .. } | IrInst::Nop | IrInst::Outb { .. } | IrInst::Cli | IrInst::Sti | IrInst::Lgdt { .. } | IrInst::Lidt { .. } | IrInst::Wrmsr { .. } | IrInst::WriteCr { .. } | IrInst::Iretq | IrInst::Ltr { .. } | IrInst::Invlpg { .. } | IrInst::StoreAbs { .. } => None,
     }
 }
 
@@ -200,7 +211,17 @@ fn collect_values_in_inst(inst: &IrInst, used: &mut HashSet<VReg>) {
         IrInst::StrCmp { a, b, len, .. } => { collect_vreg(a, used); collect_vreg(b, used); collect_vreg(len, used); }
         IrInst::StrLen { addr, .. } => { collect_vreg(addr, used); }
         IrInst::StrCopy { dst, src, len } => { collect_vreg(dst, used); collect_vreg(src, used); collect_vreg(len, used); }
-        IrInst::Alloca { .. } | IrInst::PrintStr { .. } | IrInst::ArrayAlloc { .. } | IrInst::FileOpen { .. } | IrInst::ArrayLength { .. } | IrInst::Nop => {}
+        IrInst::Outb { port, value } => { collect_vreg(port, used); collect_vreg(value, used); }
+        IrInst::Inb { port, .. } => { collect_vreg(port, used); }
+        IrInst::Lgdt { addr } | IrInst::Lidt { addr } | IrInst::Invlpg { addr } => { collect_vreg(addr, used); }
+        IrInst::Wrmsr { msr, value } => { collect_vreg(msr, used); collect_vreg(value, used); }
+        IrInst::Rdmsr { msr, .. } => { collect_vreg(msr, used); }
+        IrInst::WriteCr { cr, value } => { collect_vreg(cr, used); collect_vreg(value, used); }
+        IrInst::ReadCr { cr, .. } => { collect_vreg(cr, used); }
+        IrInst::Ltr { selector } => { collect_vreg(selector, used); }
+        IrInst::StoreAbs { addr, value, .. } => { collect_vreg(addr, used); collect_vreg(value, used); }
+        IrInst::LoadAbs { addr, .. } => { collect_vreg(addr, used); }
+        IrInst::Alloca { .. } | IrInst::PrintStr { .. } | IrInst::ArrayAlloc { .. } | IrInst::FileOpen { .. } | IrInst::ArrayLength { .. } | IrInst::Nop | IrInst::Cli | IrInst::Sti | IrInst::Iretq => {}
     }
 }
 

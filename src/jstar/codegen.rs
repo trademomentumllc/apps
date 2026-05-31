@@ -268,6 +268,19 @@ impl CodeGen {
                     | IrInst::StrLen { dest, .. } => {
                         self.alloc_stack_slot(*dest, 8);
                     }
+                    // Kernel instructions with dest register
+                    IrInst::Inb { dest, .. }
+                    | IrInst::Rdmsr { dest, .. }
+                    | IrInst::ReadCr { dest, .. }
+                    | IrInst::LoadAbs { dest, .. } => {
+                        self.alloc_stack_slot(*dest, 8);
+                    }
+                    // Kernel instructions without dest
+                    IrInst::Outb { .. } | IrInst::Cli | IrInst::Sti
+                    | IrInst::Lgdt { .. } | IrInst::Lidt { .. }
+                    | IrInst::Wrmsr { .. } | IrInst::Invlpg { .. }
+                    | IrInst::WriteCr { .. } | IrInst::Iretq
+                    | IrInst::Ltr { .. } | IrInst::StoreAbs { .. } => {}
                     IrInst::Store { .. } | IrInst::StoreIndexed { .. }
                     | IrInst::Print { .. } | IrInst::PrintStr { .. }
                     | IrInst::Nop | IrInst::ArrayStore { .. }
@@ -864,6 +877,140 @@ impl CodeGen {
 
             IrInst::Nop => {
                 self.emit_nop();
+            }
+
+            // ── Kernel / bare-metal instructions ──
+
+            IrInst::Outb { port, value } => {
+                // out dx, al — 0xEE (byte from al to port in dx)
+                self.emit_load_value(X86Reg::Rdx, port);
+                self.emit_load_value(X86Reg::Rax, value);
+                self.text.push(0xEE); // out dx, al
+            }
+
+            IrInst::Inb { dest, port } => {
+                // in al, dx — 0xEC (byte from port in dx to al)
+                self.emit_load_value(X86Reg::Rdx, port);
+                self.text.push(0xEC); // in al, dx
+                self.text.extend_from_slice(&[0x48, 0x0F, 0xB6, 0xC0]); // movzx rax, al
+                let offset = self.vreg_offset(*dest);
+                self.emit_store_reg_to_rbp_offset(X86Reg::Rax, offset);
+            }
+
+            IrInst::Cli => {
+                self.text.push(0xFA); // cli
+            }
+
+            IrInst::Sti => {
+                self.text.push(0xFB); // sti
+            }
+
+            IrInst::Lgdt { addr } => {
+                // lgdt [rax] — load GDT descriptor from address in rax
+                self.emit_load_value(X86Reg::Rax, addr);
+                self.text.extend_from_slice(&[0x0F, 0x01, 0x10]); // lgdt [rax]
+            }
+
+            IrInst::Lidt { addr } => {
+                // lidt [rax] — load IDT descriptor from address in rax
+                self.emit_load_value(X86Reg::Rax, addr);
+                self.text.extend_from_slice(&[0x0F, 0x01, 0x18]); // lidt [rax]
+            }
+
+            IrInst::Wrmsr { msr, value } => {
+                // wrmsr: ecx=MSR number, edx:eax=value
+                self.emit_load_value(X86Reg::Rax, value);
+                // Split 64-bit value: edx = high 32, eax = low 32
+                self.text.extend_from_slice(&[0x48, 0x89, 0xC2]); // mov rdx, rax
+                self.text.extend_from_slice(&[0x48, 0xC1, 0xEA, 0x20]); // shr rdx, 32
+                self.emit_load_value(X86Reg::Rcx, msr);
+                self.text.extend_from_slice(&[0x0F, 0x30]); // wrmsr
+            }
+
+            IrInst::Rdmsr { dest, msr } => {
+                // rdmsr: ecx=MSR number, result in edx:eax
+                self.emit_load_value(X86Reg::Rcx, msr);
+                self.text.extend_from_slice(&[0x0F, 0x32]); // rdmsr
+                // Combine edx:eax into rax (rax = (rdx << 32) | eax)
+                self.text.extend_from_slice(&[0x48, 0xC1, 0xE2, 0x20]); // shl rdx, 32
+                self.text.extend_from_slice(&[0x48, 0x09, 0xD0]); // or rax, rdx
+                let offset = self.vreg_offset(*dest);
+                self.emit_store_reg_to_rbp_offset(X86Reg::Rax, offset);
+            }
+
+            IrInst::Invlpg { addr } => {
+                // invlpg [rax]
+                self.emit_load_value(X86Reg::Rax, addr);
+                self.text.extend_from_slice(&[0x0F, 0x01, 0x38]); // invlpg [rax]
+            }
+
+            IrInst::WriteCr { cr, value } => {
+                // mov crN, rax — CR number must be immediate
+                self.emit_load_value(X86Reg::Rax, value);
+                if let IrValue::Imm(n) = cr {
+                    match n {
+                        0 => self.text.extend_from_slice(&[0x0F, 0x22, 0xC0]), // mov cr0, rax
+                        3 => self.text.extend_from_slice(&[0x0F, 0x22, 0xD8]), // mov cr3, rax
+                        4 => self.text.extend_from_slice(&[0x0F, 0x22, 0xE0]), // mov cr4, rax
+                        _ => self.text.extend_from_slice(&[0x0F, 0x0B]),       // ud2
+                    }
+                }
+            }
+
+            IrInst::ReadCr { dest, cr } => {
+                // mov rax, crN
+                if let IrValue::Imm(n) = cr {
+                    match n {
+                        0 => self.text.extend_from_slice(&[0x0F, 0x20, 0xC0]), // mov rax, cr0
+                        2 => self.text.extend_from_slice(&[0x0F, 0x20, 0xD0]), // mov rax, cr2
+                        3 => self.text.extend_from_slice(&[0x0F, 0x20, 0xD8]), // mov rax, cr3
+                        4 => self.text.extend_from_slice(&[0x0F, 0x20, 0xE0]), // mov rax, cr4
+                        _ => self.text.extend_from_slice(&[0x0F, 0x0B]),       // ud2
+                    }
+                }
+                let offset = self.vreg_offset(*dest);
+                self.emit_store_reg_to_rbp_offset(X86Reg::Rax, offset);
+            }
+
+            IrInst::Iretq => {
+                self.text.extend_from_slice(&[0x48, 0xCF]); // iretq (REX.W + iret)
+            }
+
+            IrInst::Ltr { selector } => {
+                // ltr ax — load task register
+                self.emit_load_value(X86Reg::Rax, selector);
+                self.text.extend_from_slice(&[0x0F, 0x00, 0xD8]); // ltr ax
+            }
+
+            IrInst::StoreAbs { addr, value, ty } => {
+                // Write value to absolute address
+                self.emit_load_value(X86Reg::Rax, addr);
+                self.emit_load_value(X86Reg::Rcx, value);
+                match ty {
+                    JStarType::Byte => {
+                        self.text.extend_from_slice(&[0x88, 0x08]); // mov [rax], cl
+                    }
+                    _ => {
+                        self.text.extend_from_slice(&[0x48, 0x89, 0x08]); // mov [rax], rcx
+                    }
+                }
+            }
+
+            IrInst::LoadAbs { dest, addr, ty } => {
+                // Read value from absolute address
+                self.emit_load_value(X86Reg::Rax, addr);
+                match ty {
+                    JStarType::Byte => {
+                        // movzx rax, byte [rax]
+                        self.text.extend_from_slice(&[0x48, 0x0F, 0xB6, 0x00]);
+                    }
+                    _ => {
+                        // mov rax, [rax]
+                        self.text.extend_from_slice(&[0x48, 0x8B, 0x00]);
+                    }
+                }
+                let offset = self.vreg_offset(*dest);
+                self.emit_store_reg_to_rbp_offset(X86Reg::Rax, offset);
             }
         }
         Ok(())

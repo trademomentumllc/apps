@@ -223,6 +223,61 @@ pub enum IrInst {
 
     /// No-op (placeholder)
     Nop,
+
+    // ── Kernel / bare-metal instructions ──
+
+    /// outb port, value — write byte to I/O port
+    Outb { port: IrValue, value: IrValue },
+
+    /// dest = inb port — read byte from I/O port
+    Inb { dest: VReg, port: IrValue },
+
+    /// cli — disable interrupts
+    Cli,
+
+    /// sti — enable interrupts
+    Sti,
+
+    /// lgdt addr — load GDT register from memory
+    Lgdt { addr: IrValue },
+
+    /// lidt addr — load IDT register from memory
+    Lidt { addr: IrValue },
+
+    /// wrmsr msr_num, value — write model-specific register
+    Wrmsr { msr: IrValue, value: IrValue },
+
+    /// dest = rdmsr msr_num — read model-specific register
+    Rdmsr { dest: VReg, msr: IrValue },
+
+    /// invlpg addr — invalidate TLB entry
+    Invlpg { addr: IrValue },
+
+    /// writecr cr_num, value — write control register
+    WriteCr { cr: IrValue, value: IrValue },
+
+    /// dest = readcr cr_num — read control register
+    ReadCr { dest: VReg, cr: IrValue },
+
+    /// iretq — return from interrupt (64-bit)
+    Iretq,
+
+    /// ltr selector — load task register
+    Ltr { selector: IrValue },
+
+    /// storeabs addr, value — store to absolute physical address
+    StoreAbs {
+        addr: IrValue,
+        value: IrValue,
+        ty: JStarType,
+    },
+
+    /// dest = loadabs addr — load from absolute physical address
+    LoadAbs {
+        dest: VReg,
+        addr: IrValue,
+        ty: JStarType,
+    },
 }
 
 /// Comparison kind — determines the condition code in codegen.
@@ -1450,6 +1505,85 @@ impl Lowerer {
             JStarInstruction::Nop => {
                 produces_result = false;
                 insts.push(IrInst::Nop);
+            }
+
+            // ── Kernel / bare-metal ──
+
+            JStarInstruction::Outb => {
+                produces_result = false;
+                let (port, value) = self.get_two_operands(operands)?;
+                insts.push(IrInst::Outb { port, value });
+            }
+            JStarInstruction::Inb => {
+                let port = self.get_one_operand(operands)?;
+                insts.push(IrInst::Inb { dest, port });
+            }
+            JStarInstruction::Cli => {
+                produces_result = false;
+                insts.push(IrInst::Cli);
+            }
+            JStarInstruction::Sti => {
+                produces_result = false;
+                insts.push(IrInst::Sti);
+            }
+            JStarInstruction::Lgdt => {
+                produces_result = false;
+                let addr = self.get_one_operand(operands)?;
+                insts.push(IrInst::Lgdt { addr });
+            }
+            JStarInstruction::Lidt => {
+                produces_result = false;
+                let addr = self.get_one_operand(operands)?;
+                insts.push(IrInst::Lidt { addr });
+            }
+            JStarInstruction::Wrmsr => {
+                produces_result = false;
+                let (msr, value) = self.get_two_operands(operands)?;
+                insts.push(IrInst::Wrmsr { msr, value });
+            }
+            JStarInstruction::Rdmsr => {
+                let msr = self.get_one_operand(operands)?;
+                insts.push(IrInst::Rdmsr { dest, msr });
+            }
+            JStarInstruction::Invlpg => {
+                produces_result = false;
+                let addr = self.get_one_operand(operands)?;
+                insts.push(IrInst::Invlpg { addr });
+            }
+            JStarInstruction::WriteCr => {
+                produces_result = false;
+                let (cr, value) = self.get_two_operands(operands)?;
+                insts.push(IrInst::WriteCr { cr, value });
+            }
+            JStarInstruction::ReadCr => {
+                let cr = self.get_one_operand(operands)?;
+                insts.push(IrInst::ReadCr { dest, cr });
+            }
+            JStarInstruction::Iretq => {
+                produces_result = false;
+                insts.push(IrInst::Iretq);
+            }
+            JStarInstruction::Ltr => {
+                produces_result = false;
+                let selector = self.get_one_operand(operands)?;
+                insts.push(IrInst::Ltr { selector });
+            }
+            JStarInstruction::StoreAbs => {
+                produces_result = false;
+                let (addr, value) = self.get_two_operands(operands)?;
+                insts.push(IrInst::StoreAbs {
+                    addr,
+                    value,
+                    ty: result_type,
+                });
+            }
+            JStarInstruction::LoadAbs => {
+                let addr = self.get_one_operand(operands)?;
+                insts.push(IrInst::LoadAbs {
+                    dest,
+                    addr,
+                    ty: result_type,
+                });
             }
         }
 
