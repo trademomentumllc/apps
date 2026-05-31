@@ -983,12 +983,14 @@ impl CodeGen {
             }
 
             IrInst::StoreAbs { addr, value, ty } => {
-                // Write value to absolute address
                 self.emit_load_value(X86Reg::Rax, addr);
                 self.emit_load_value(X86Reg::Rcx, value);
                 match ty {
                     JStarType::Byte => {
                         self.text.extend_from_slice(&[0x88, 0x08]); // mov [rax], cl
+                    }
+                    JStarType::Short => {
+                        self.text.extend_from_slice(&[0x66, 0x89, 0x08]); // mov [rax], cx
                     }
                     _ => {
                         self.text.extend_from_slice(&[0x48, 0x89, 0x08]); // mov [rax], rcx

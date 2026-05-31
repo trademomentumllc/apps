@@ -246,6 +246,9 @@ impl TypeChecker {
             | JStarInstruction::StrCopy
             | JStarInstruction::Nop => JStarType::Void,
 
+            // StoreAbs: type is the *value* being stored (second operand)
+            JStarInstruction::StoreAbs => operands.get(1).map(|o| o.ty()).unwrap_or(JStarType::Long),
+
             // For arithmetic and most other ops, use the widest operand type
             _ => operands.first().map(|o| o.ty()).unwrap_or(JStarType::Int),
         }

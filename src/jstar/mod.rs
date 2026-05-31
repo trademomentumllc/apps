@@ -444,6 +444,24 @@ pub fn compile_source(source: &str, output_path: &Path) -> MorphResult<()> {
     Ok(())
 }
 
+/// Compile JStar source text to a bare-metal Multiboot2 kernel ELF.
+pub fn compile_kernel_source(source: &str, output_path: &Path) -> MorphResult<()> {
+    let (originals, lemmas, vectors) = tokenize_jstar(source)?;
+    let ast = parser::parse(&originals, &lemmas, &vectors)?;
+    let typed_ast = typechecker::check(&ast)?;
+    let mut ir_program = ir::lower(&typed_ast)?;
+    optimizer::optimize(&mut ir_program);
+    let machine_code = codegen::generate(&ir_program)?;
+    linker::link_kernel(&machine_code, output_path)?;
+    Ok(())
+}
+
+/// Compile a .jstr source file to a bare-metal Multiboot2 kernel ELF.
+pub fn compile_kernel_file(source_path: &Path, output_path: &Path) -> MorphResult<()> {
+    let source = std::fs::read_to_string(source_path).map_err(MorphlexError::IoError)?;
+    compile_kernel_source(&source, output_path)
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -2650,5 +2668,44 @@ return ok";
             "array 2 alpha\narray 2 beta\nstore 65 into alpha at 0\nstore 66 into beta at 0\nstrcmp alpha beta 1\nreturn it"
         );
         assert_eq!(exit, 0, "strcmp of different single-byte buffers should be 0");
+    }
+
+    // ── Kernel compilation tests ────────────────────────────────────────
+
+    #[test]
+    fn test_kernel_compiles() {
+        let source = "cli\nstoreabs 753664 74\nstoreabs 753665 15\nhalt 0\n";
+        let n = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join("jstar_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let binary = dir.join(format!("kernel_{}", n));
+        let _ = std::fs::remove_file(&binary);
+        compile_kernel_source(source, &binary).unwrap();
+        let data = std::fs::read(&binary).unwrap();
+        // Verify ELF magic
+        assert_eq!(&data[0..4], &[0x7F, b'E', b'L', b'F']);
+        // Verify Multiboot2 magic in .text (after 120-byte ELF+PHDR headers)
+        let mb2 = u32::from_le_bytes(data[120..124].try_into().unwrap());
+        assert_eq!(mb2, 0xE85250D6);
+        let _ = std::fs::remove_file(&binary);
+    }
+
+    #[test]
+    fn test_kernel_file_compiles() {
+        let kernel_path = std::path::Path::new("jstar/kernel.jstr");
+        if !kernel_path.exists() {
+            return;
+        }
+        let n = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join("jstar_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let binary = dir.join(format!("kernel_file_{}", n));
+        let _ = std::fs::remove_file(&binary);
+        compile_kernel_file(kernel_path, &binary).unwrap();
+        let data = std::fs::read(&binary).unwrap();
+        assert_eq!(&data[0..4], &[0x7F, b'E', b'L', b'F']);
+        let mb2 = u32::from_le_bytes(data[120..124].try_into().unwrap());
+        assert_eq!(mb2, 0xE85250D6);
+        let _ = std::fs::remove_file(&binary);
     }
 }

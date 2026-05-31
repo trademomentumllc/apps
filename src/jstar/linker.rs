@@ -128,7 +128,7 @@ pub fn link_kernel(code: &MachineCode, output_path: &Path) -> MorphResult<()> {
 ///   [Page tables: 3 * 4096 = 12288 bytes (PML4 + PDPT + PD)]
 ///
 /// Total stub ≈ 12,464 bytes, page-table aligned to 4096.
-fn build_boot_stub(kernel_code_len: usize) -> Vec<u8> {
+fn build_boot_stub(_kernel_code_len: usize) -> Vec<u8> {
     let mut stub = Vec::new();
 
     // ─── Multiboot2 Header ─────────────────────────────────────────────
@@ -145,7 +145,7 @@ fn build_boot_stub(kernel_code_len: usize) -> Vec<u8> {
     stub.extend_from_slice(&0u16.to_le_bytes()); // type
     stub.extend_from_slice(&0u16.to_le_bytes()); // flags
     stub.extend_from_slice(&8u32.to_le_bytes()); // size
-    let mb2_end = stub.len(); // 24 bytes
+    let _mb2_end = stub.len();
 
     // ─── 32-bit Protected Mode Stub ────────────────────────────────────
     // Entered by Multiboot2 loader at this point. CPU is in 32-bit
@@ -169,7 +169,7 @@ fn build_boot_stub(kernel_code_len: usize) -> Vec<u8> {
     // We'll place: [mb2 header: 24][32-bit code: variable][GDT: 24][GDT ptr: 10][padding][page tables: 12288]
     // First, emit the 32-bit code, then we'll know offsets.
 
-    let code32_start = stub.len();
+    let _code32_start = stub.len();
 
     // All 32-bit code is emitted as raw bytes. We use 32-bit operand/address sizes.
 
@@ -253,7 +253,7 @@ fn build_boot_stub(kernel_code_len: usize) -> Vec<u8> {
     // We just fall through — the next bytes ARE the kernel.
     // No jump needed since kernel code is contiguous.
 
-    let code32_end = stub.len();
+    let _code32_end = stub.len();
 
     // ─── GDT (Global Descriptor Table) ─────────────────────────────────
     // 3 entries: null, code64, data64

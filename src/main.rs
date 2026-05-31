@@ -175,6 +175,17 @@ enum JStarAction {
         raw: bool,
     },
 
+    /// Compile a .jstr source file to a Multiboot2 kernel ELF (bare-metal)
+    Kernel {
+        /// Path to the .jstr kernel source file
+        #[arg(short, long)]
+        input: PathBuf,
+
+        /// Output path for the kernel ELF
+        #[arg(short, long, default_value = "kernel.elf")]
+        output: PathBuf,
+    },
+
     /// Parse a .jstr source file and display the AST (for debugging)
     Parse {
         /// Path to the .jstr source file, or inline text with --text
@@ -673,6 +684,17 @@ fn main() {
                         .expect("JStar compilation failed");
                 }
                 println!("Binary written to {}", output.display());
+            }
+            JStarAction::Kernel { input, output } => {
+                println!(
+                    "Compiling kernel {} -> {}",
+                    input.display(),
+                    output.display()
+                );
+                morphlex::jstar::compile_kernel_file(&input, &output)
+                    .expect("Kernel compilation failed");
+                println!("Kernel ELF written to {}", output.display());
+                println!("Boot with: qemu-system-x86_64 -kernel {}", output.display());
             }
             JStarAction::Parse { input, text } => {
                 let source = match (input, text) {
